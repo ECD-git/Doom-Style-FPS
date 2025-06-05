@@ -1,0 +1,1 @@
+Credit to: https://github.com/ssloy/tinyraycaster/wiki/Part-1:-crude-3D-renderings
