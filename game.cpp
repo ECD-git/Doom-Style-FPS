@@ -4,12 +4,21 @@
 #include<vector>
 #include<stdint.h>
 #include<assert.h>
+#include<map>
 
 uint32_t pack_color(const uint8_t r, const uint8_t g, const uint8_t b, const uint8_t a = 255)
 {
   return (a<<24) + (b<<16) + (g<<8) + r;
   // packs as aaaaaaaabbbbbbbbggggggggrrrrrrrr in a uint23_t
 }
+
+std::map<char, uint32_t> mapcolors = {
+  {'0', pack_color(0,255,255)},
+  {'1', pack_color(255,255,0)},
+  {'2', pack_color(255,0,255)},
+  {'3', pack_color(128,128,128)}
+};
+
 void unpack_color(const uint32_t &color, uint8_t &r, uint8_t &g, uint8_t &b, uint8_t &a)
 {
   r = (color >> 0) & 255;
@@ -67,15 +76,16 @@ void draw_player(std::vector<uint32_t> &image, const size_t imgW, const size_t v
   }
 }
 
-void ray_cast(std::vector<uint32_t> &image, std::vector<float> &casts, const char map[], const size_t imgW, const size_t viewW, const size_t imgH, const size_t rectW, const size_t rectH, const size_t mapW, const size_t mapH, const float x, const float y, const float a, const float fov, const uint32_t color)
+void ray_cast(std::vector<uint32_t> &image, std::vector<float> &casts, std::vector<uint32_t> &castcolors, const char map[], const size_t imgW, const size_t viewW, const size_t imgH, const size_t rectW, const size_t rectH, const size_t mapW, const size_t mapH, const float x, const float y, const float a, const float fov)
 {
+  float renderdist = 20;
+  float caststep = 0.01;
   assert(image.size() == (imgW+viewW)*imgH);
-
   int intervals = viewW - 1;
   for(float ang = a-(fov/2); ang<a+(fov/2); ang+=(fov/intervals))
   {
     float c = 0;
-    for(float c = 0; c<20; c+=0.05)
+    for(float c = 0; c<renderdist; c+=caststep)
     {
       float new_x = x + c*cos(ang);
       float new_y = y + c*sin(ang);
@@ -83,12 +93,17 @@ void ray_cast(std::vector<uint32_t> &image, std::vector<float> &casts, const cha
       if (map[int(new_x)+ int(new_y)*mapW] != ' ')
       {
         casts.push_back(c);
+        castcolors.push_back(mapcolors[map[int(new_x)+ int(new_y)*mapW]]);
         break;
       }
       size_t cx = new_x*rectW;
       size_t cy = new_y*rectH;
       //assert(cx < imgW && cy < imgH);
-      image[cx + cy*(imgW + viewW)] = color;
+      image[cx + cy*(imgW + viewW)] = pack_color(255,255,255);
+      if(c==renderdist-caststep)
+      {
+        castcolors.push_back(pack_color(225,255,255));
+      }
     }
   }
 
@@ -113,22 +128,22 @@ void ray_cast(std::vector<uint32_t> &image, std::vector<float> &casts, const cha
   }
 }
 
-void draw_view(std::vector<uint32_t> &image, std::vector<float> casts, const size_t winW, const size_t winH, const size_t viewW, const size_t viewH)
+void draw_view(std::vector<uint32_t> &image, std::vector<float> &casts, std::vector<uint32_t> &colors, const size_t winW, const size_t winH, const size_t viewW, const size_t viewH)
 {
   assert(casts.size() == viewW);
   for(int j = 0; j < viewW; j++)
   {
     int height = int(viewH/casts[j]);
-    std::cout<<height<<std::endl;
+    //std::cout<<height<<std::endl;
     int space = int((viewH-height)/2);
-    std::cout<<space<<std::endl;
-    std::cout<<height + space*2<<std::endl;
+    //std::cout<<space<<std::endl;
+    //std::cout<<height + space*2<<std::endl;
     //assert(height + space*2 == viewH);
     for(int i = 0; i < viewH; i++)
     {
       if(i > space && i < space+height)
       {
-        image[i*(winW+viewW) + j + winW] = pack_color(0, 255, 255);
+        image[i*(winW+viewW) + j + winW] = colors[j];
       }
       else
       {
@@ -160,14 +175,14 @@ int main()
                     "1     0        0"\
                     "0     0  1110000"\
                     "0     3        0"\
-                    "0    0000      0"\
+                    "2   10000      0"\
                     "0   0   11100  0"\
-                    "0   0   0      0"\
-                    "0   0   1  00000"\
-                    "0       1      0"\
-                    "2       1      0"\
+                    "2   2   0      0"\
+                    "2   0   1  00000"\
+                    "0       2      0"\
+                    "2       2      0"\
                     "0       0      0"\
-                    "0 0000000      0"\
+                    "0 0033000      0"\
                     "0              0"\
                     "0002222222200000"; // this map is taken from the tutorial I cba
             
@@ -209,9 +224,10 @@ int main()
         continue; // skip spaces
       }
       //std::cout<<'n';
+      
       size_t rect_y = j*rectH;
       size_t rect_x = i*rectW;
-      draw_rectangle(framebuffer, winW, viewW, winH, rect_x, rect_y, rectW, rectH, pack_color(0,255,255));
+      draw_rectangle(framebuffer, winW, viewW, winH, rect_x, rect_y, rectW, rectH, mapcolors[map[(i+(j*mapW))]]);
     }
   }
 
@@ -225,11 +241,12 @@ int main()
 
   draw_player(framebuffer, winW, viewW, winH, rectW, rectH, player_x, player_y, playerW, playerH ,pack_color(255,255,255));
   std::vector<float> casts;
-  ray_cast(framebuffer, casts, map, winW, viewW, winH, rectW, rectH, mapW, mapH, player_x, player_y, player_a, player_fov, pack_color(255,255,255));
+  std::vector<uint32_t> castcolors;
+  ray_cast(framebuffer, casts, castcolors, map, winW, viewW, winH, rectW, rectH, mapW, mapH, player_x, player_y, player_a, player_fov);
 
   std::cout<<casts.size()<<std::endl;
 
-  draw_view(framebuffer, casts, winW, winH, viewW, viewH);
+  draw_view(framebuffer, casts, castcolors, winW, winH, viewW, viewH);
 
   // generates the image from the framebuffer
   gen_ppm_image("./out.ppm", framebuffer, winW, winH, viewW);
